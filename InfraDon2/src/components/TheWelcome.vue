@@ -1,13 +1,13 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import PouchDB from 'pouchdb'
+
 const counter = ref(0)
 const increment = () => {
   counter.value++
 }
 
-import { onMounted, ref } from 'vue'
-import PouchDB from 'pouchdb'
-
-declare interface Post {
+interface Post {
   nom: string
   age: number
   ville: string
@@ -16,7 +16,7 @@ declare interface Post {
 }
 
 // Référence à la base de données
-const storage = ref()
+const storage = ref<PouchDB.Database | null>(null)
 // Données stockées
 const postsData = ref<Post[]>([])
 
@@ -32,43 +32,60 @@ const initDatabase = () => {
     console.warn('Echec lors de la connexion à la base de données')
   }
 
-  localdb.replicate
-    .from('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
-      live: true,
-      retry: false,
-    })
-    .on('change', (info) => {
-      console.log('Changements reçus du serveur')
-      fetchData()
-    })
-    .on('complete', () => {
-      console.log('Réplication initiale terminée')
-      fetchData()
-    })
-    .on('error', (err) => {
-      console.error('Erreur réplication pull :', err)
-    })
+  // Réplicatiosn (unidirectionnelles)
+  // localdb.replicate
+  //   .from('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
+  //     live: true,
+  //     retry: false,
+  //   })
+  //   .on('change', (info) => {
+  //     console.log('Changements reçus du serveur', info)
+  //     fetchData()
+  //   })
+  //   .on('complete', (info) => {
+  //     console.log('Réplication initiale terminée', info)
+  //   })
+  //   .on('error', (err) => {
+  //     console.error('Erreur réplication pull :', err)
+  //   })
 
-  localdb.replicate
-    .to('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
+  // localdb.replicate
+  //   .to('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
+  //     live: true,
+  //     retry: false,
+  //   })
+  //   .on('change', (info) => {
+  //     console.log('Changements reçus du serveur', info)
+  //     fetchData()
+  //   })
+  //   .on('complete', (info) => {
+  //     console.log('Réplication initiale terminée', info)
+  //   })
+  //   .on('error', (err) => {
+  //     console.error('Erreur réplication pull :', err)
+  //   })
+
+  // Synchronisation
+  localdb
+    .sync('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
       live: true,
       retry: false,
     })
     .on('change', (info) => {
-      console.log('Changements reçus du serveur')
+      console.log('Synchronisation : changement détecté', info)
       fetchData()
     })
-    .on('complete', () => {
-      console.log('Réplication initiale terminée')
-      fetchData()
+    .on('complete', (info) => {
+      console.log('Synchronisation terminée', info)
     })
     .on('error', (err) => {
-      console.error('Erreur réplication pull :', err)
+      console.log('Erreur de synchronisation :', err)
     })
 }
 
 // Récupération des données
 const fetchData = () => {
+  if (!storage.value) return
   storage.value
     .allDocs({
       include_docs: true,
@@ -89,7 +106,8 @@ const fetchData = () => {
   // Remplir le tableau postsData avec les données récupérées
 }
 
-const createDoc = (newDoc) => {
+const createDoc = (newDoc: Post) => {
+  if (!storage.value) return
   storage.value
     .post(newDoc)
     .then((response) => {
@@ -101,9 +119,10 @@ const createDoc = (newDoc) => {
     })
 }
 
-const updateDoc = (doc) => {
+const updateDoc = (doc: Post) => {
   const newDoc = { ...doc }
-  newDoc.ville = 'Update' + new Date().toISOString()
+  newDoc.ville = 'Lausanne' // 'Update' + new Date().toISOString()
+  if (!storage.value) return
   storage.value
     .put(newDoc)
     .then((response) => {
@@ -115,7 +134,8 @@ const updateDoc = (doc) => {
     })
 }
 
-const deleteDoc = (doc) => {
+const deleteDoc = (doc: Post) => {
+  if (!storage.value) return
   storage.value
     .remove(doc)
     .then((response) => {
@@ -140,7 +160,7 @@ onMounted(() => {
   <button @click="increment">+1</button>
   <p>PostDatas</p>
   <ul>
-    <li v-for="post in postsData" :key="post._id">
+    <li v-for="(post, index) in postsData" :key="post._id ?? index">
       {{ post.nom }} - {{ post.age }} - {{ post.ville }}
       <button @click="updateDoc(post)">Modifier</button>
       <button @click="deleteDoc(post)">Supprimer</button>
