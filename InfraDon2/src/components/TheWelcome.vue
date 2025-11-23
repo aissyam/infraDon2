@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import PouchDB from 'pouchdb'
+import PouchDBFind from 'pouchdb-find'
+
+PouchDB.plugin(PouchDBFind)
 
 const counter = ref(0)
 const increment = () => counter.value++
@@ -26,6 +29,18 @@ const initDatabase = () => {
   storage.value = localdb
 
   console.log('Connecté à la DB :', localdb.name)
+}
+
+const createIndex = async () => {
+  if (!storage.value) return
+  try {
+    const result = await storage.value.createIndex({
+      index: { fields: ['nom'] },
+    })
+    console.log('Index créé :', result)
+  } catch (err) {
+    console.error('Erreur création index :', err)
+  }
 }
 
 const fetchData = () => {
@@ -56,7 +71,7 @@ const startChangesWatcher = () => {
       skipSetup: true,
     })
     .on('change', () => fetchData())
-    .on('error', (err) => console.error('Erreur Changes:', err))
+    .on('error', (err) => console.error('Erreur Changes :', err))
 }
 
 // Synchro online
@@ -133,6 +148,7 @@ onMounted(() => {
   console.log('=> Composant initialisé')
 
   initDatabase()
+  createIndex()
   fetchData()
   startChangesWatcher()
   startSync()
