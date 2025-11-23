@@ -31,6 +31,7 @@ const initDatabase = () => {
   console.log('Connecté à la DB :', localdb.name)
 }
 
+// Index
 const createIndex = async () => {
   if (!storage.value) return
   try {
@@ -165,7 +166,6 @@ const searchDocs = async () => {
 
 onMounted(() => {
   console.log('=> Composant initialisé')
-
   initDatabase()
   createIndex()
   fetchData()
@@ -179,14 +179,17 @@ onMounted(() => {
   <p>Counter: {{ counter }}</p>
   <button @click="increment">+1</button>
   <p>PostDatas</p>
+
+  <input v-model="searchQuery" @input="searchDocs" placeholder="Rechercher par nom" />
+  <br />
+  <button @click="toggleOffline">{{ isOffline ? 'Passer Online' : 'Passer Offline' }}</button>
+  <br />
   <ul>
-    <input v-model="searchQuery" @input="searchDocs" placeholder="Rechercher par nom..." />
     <li v-for="(post, index) in postsData" :key="post._id ?? index">
       {{ post.nom }} - {{ post.age }} - {{ post.ville }}
       <button @click="updateDoc(post)">Modifier</button>
       <button @click="deleteDoc(post)">Supprimer</button>
-      <button @click="toggleOffline">{{ isOffline ? 'Passer Online' : 'Passer Offline' }}</button>
     </li>
   </ul>
-  <button @click="createDoc({ nom: 'Marie', age: 22, ville: 'Tokyo' })">Créer</button>
+  <button @click="createDoc({ nom: 'Marie', age: 22, ville: 'London' })">Créer</button>
 </template>
