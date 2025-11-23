@@ -144,6 +144,25 @@ const deleteDoc = (doc: Post) => {
     .catch((err) => console.error(err))
 }
 
+// Recherche avec l'Index
+const searchQuery = ref('')
+
+const searchDocs = async () => {
+  if (!storage.value) return
+  if (!searchQuery.value.trim()) return fetchData() //reset
+
+  try {
+    const result = await storage.value.find({
+      selector: {
+        nom: { $regex: RegExp(searchQuery.value, 'i') },
+      },
+    })
+    postsData.value = result.docs
+  } catch (err) {
+    console.error('Erreur de recherche :', err)
+  }
+}
+
 onMounted(() => {
   console.log('=> Composant initialisé')
 
@@ -161,6 +180,7 @@ onMounted(() => {
   <button @click="increment">+1</button>
   <p>PostDatas</p>
   <ul>
+    <input v-model="searchQuery" @input="searchDocs" placeholder="Rechercher par nom..." />
     <li v-for="(post, index) in postsData" :key="post._id ?? index">
       {{ post.nom }} - {{ post.age }} - {{ post.ville }}
       <button @click="updateDoc(post)">Modifier</button>
