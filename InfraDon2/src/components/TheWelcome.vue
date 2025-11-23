@@ -3,9 +3,7 @@ import { onMounted, ref } from 'vue'
 import PouchDB from 'pouchdb'
 
 const counter = ref(0)
-const increment = () => {
-  counter.value++
-}
+const increment = () => counter.value++
 
 interface Post {
   nom: string
@@ -15,142 +13,129 @@ interface Post {
   _rev?: string
 }
 
-// Référence à la base de données
-const storage = ref<PouchDB.Database | null>(null)
-// Données stockées
+// Base de données
+const storage = ref<PouchDB.Database<Post> | null>(null)
 const postsData = ref<Post[]>([])
 
-// Initialisation de la base de données
+const isOffline = ref(false)
+let syncHandler: PouchDB.Replication.Sync<Post> | null = null
+let changesHandler: PouchDB.Core.Changes<Post> | null = null
+
 const initDatabase = () => {
-  console.log('=> Connexion à la base de données')
-  const localdb = new PouchDB('ma_collection')
-  //const remotedb = new PouchDB('http://admin:cestcatastrophiiique@localhost:5984/ma_collection')
-  if (localdb) {
-    console.log('Connecté à la collection : ' + localdb?.name)
-    storage.value = localdb
-  } else {
-    console.warn('Echec lors de la connexion à la base de données')
+  const localdb = new PouchDB<Post>('ma_collection')
+  storage.value = localdb
+
+  console.log('Connecté à la DB :', localdb.name)
+}
+
+const fetchData = () => {
+  if (!storage.value) return
+
+  storage.value
+    .allDocs({ include_docs: true })
+    .then((result) => {
+      postsData.value = result.rows.map((r) => r.doc).filter(Boolean) as Post[]
+    })
+    .catch((err) => console.error(err))
+}
+
+// Watcher
+const startChangesWatcher = () => {
+  if (!storage.value) return
+
+  if (changesHandler) {
+    changesHandler.cancel()
+    changesHandler = null
   }
 
-  // Réplicatiosn (unidirectionnelles)
-  // localdb.replicate
-  //   .from('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
-  //     live: true,
-  //     retry: false,
-  //   })
-  //   .on('change', (info) => {
-  //     console.log('Changements reçus du serveur', info)
-  //     fetchData()
-  //   })
-  //   .on('complete', (info) => {
-  //     console.log('Réplication initiale terminée', info)
-  //   })
-  //   .on('error', (err) => {
-  //     console.error('Erreur réplication pull :', err)
-  //   })
-
-  // localdb.replicate
-  //   .to('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
-  //     live: true,
-  //     retry: false,
-  //   })
-  //   .on('change', (info) => {
-  //     console.log('Changements reçus du serveur', info)
-  //     fetchData()
-  //   })
-  //   .on('complete', (info) => {
-  //     console.log('Réplication initiale terminée', info)
-  //   })
-  //   .on('error', (err) => {
-  //     console.error('Erreur réplication pull :', err)
-  //   })
-
-  // Synchronisation
-  localdb
-    .sync('http://admin:cestcatastrophiiique@localhost:5984/ma_collection', {
+  changesHandler = storage.value
+    .changes({
       live: true,
-      retry: false,
+      include_docs: true,
+      since: 'now',
+      skipSetup: true,
     })
+    .on('change', () => fetchData())
+    .on('error', (err) => console.error('Erreur Changes:', err))
+}
+
+// Synchro online
+const startSync = () => {
+  if (!storage.value) return
+
+  const remoteURL = 'http://admin:cestcatastrophiiique@localhost:5984/ma_collection'
+
+  if (syncHandler) {
+    syncHandler.cancel()
+    syncHandler = null
+  }
+
+  syncHandler = storage.value
+    .sync(remoteURL, { live: true, retry: true })
     .on('change', (info) => {
       console.log('Synchronisation : changement détecté', info)
       fetchData()
     })
-    .on('complete', (info) => {
-      console.log('Synchronisation terminée', info)
-    })
-    .on('error', (err) => {
-      console.log('Erreur de synchronisation :', err)
-    })
+    .on('error', (err) => console.error('Erreur de synchronisation :', err))
 }
 
-// Récupération des données
-const fetchData = () => {
-  if (!storage.value) return
-  storage.value
-    .allDocs({
-      include_docs: true,
-      attachments: true,
-    })
-    .then((result) => {
-      postsData.value = result.rows.map((row) => row.doc)
-      console.log(postsData.value)
-      // handle result
-    })
-    .catch(function (err) {
-      console.log(err)
-    })
-
-  // TODO Récupération des données
-  // https://pouchdb.com/api.html#batch_fetch
-  // Regarder l'exemple avec function allDocs
-  // Remplir le tableau postsData avec les données récupérées
+// Synchro offline
+const stopSync = () => {
+  if (syncHandler) {
+    syncHandler.cancel()
+    syncHandler = null
+    console.log('Mode offline : Synchro arrêtée')
+  }
 }
 
+// Toggle
+const toggleOffline = () => {
+  isOffline.value = !isOffline.value
+
+  if (isOffline.value) {
+    stopSync()
+  } else {
+    startSync()
+  }
+}
+
+// CRUD
 const createDoc = (newDoc: Post) => {
   if (!storage.value) return
+
   storage.value
     .post(newDoc)
-    .then((response) => {
-      console.log(response)
-      fetchData()
-    })
-    .catch(function (err) {
-      console.log(err)
-    })
+    .then(() => fetchData())
+    .catch((err) => console.error(err))
 }
 
 const updateDoc = (doc: Post) => {
-  const newDoc = { ...doc }
-  newDoc.ville = 'Lausanne' // 'Update' + new Date().toISOString()
   if (!storage.value) return
+
+  const updated = { ...doc, ville: 'Lausanne' }
+
   storage.value
-    .put(newDoc)
-    .then((response) => {
-      console.log(response)
-      fetchData()
-    })
-    .catch(function (err) {
-      console.log(err)
-    })
+    .put(updated)
+    .then(() => fetchData())
+    .catch((err) => console.error(err))
 }
 
 const deleteDoc = (doc: Post) => {
   if (!storage.value) return
+
   storage.value
     .remove(doc)
-    .then((response) => {
-      console.log(response)
-      fetchData()
-    })
-    .catch(function (err) {
-      console.log(err)
-    })
+    .then(() => fetchData())
+    .catch((err) => console.error(err))
 }
 
 onMounted(() => {
   console.log('=> Composant initialisé')
+
   initDatabase()
   fetchData()
+  startChangesWatcher()
+  startSync()
 })
 </script>
 
@@ -164,7 +149,8 @@ onMounted(() => {
       {{ post.nom }} - {{ post.age }} - {{ post.ville }}
       <button @click="updateDoc(post)">Modifier</button>
       <button @click="deleteDoc(post)">Supprimer</button>
+      <button @click="toggleOffline">{{ isOffline ? 'Passer Online' : 'Passer Offline' }}</button>
     </li>
   </ul>
-  <button @click="createDoc({ nom: 'Marie', age: 22, ville: 'Séoul' })">Créer</button>
+  <button @click="createDoc({ nom: 'Marie', age: 22, ville: 'Tokyo' })">Créer</button>
 </template>
