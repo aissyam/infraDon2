@@ -20,91 +20,98 @@ interface Post {
 const storage = ref<PouchDB.Database<Post> | null>(null)
 const postsData = ref<Post[]>([])
 
+let postsChanges: any = null
+let postsSync: any = null
+
+interface City {
+  nom: string
+  pays: string
+  population: number
+  _id?: string
+  _rev?: string
+}
+
+const citiesDB = ref<PouchDB.Database<City> | null>(null)
+const citiesData = ref<City[]>([])
+
+let citiesChanges: any = null
+let citiesSync: any = null
+
 const isOffline = ref(false)
-let syncHandler: PouchDB.Replication.Sync<Post> | null = null
-let changesHandler: PouchDB.Core.Changes<Post> | null = null
 
-const initDatabase = () => {
-  const localdb = new PouchDB<Post>('ma_collection')
-  storage.value = localdb
+const initDatabases = () => {
+  storage.value = new PouchDB<Post>('ma_collection')
+  citiesDB.value = new PouchDB<City>('second')
 
-  console.log('Connecté à la DB :', localdb.name)
+  console.log('Connecté à la 1ère DB :', storage.value.name)
+  console.log('Connecté à la 2e DB :', citiesDB.value.name)
 }
 
 // Index
-const createIndex = async () => {
-  if (!storage.value) return
-  try {
-    const result = await storage.value.createIndex({
-      index: { fields: ['nom'] },
-    })
-    console.log('Index créé :', result)
-  } catch (err) {
-    console.error('Erreur création index :', err)
-  }
+const createIndexes = async () => {
+  await storage.value?.createIndex({ index: { fields: ['nom'] } })
+  await citiesDB.value?.createIndex({ index: { fields: ['nom'] } })
 }
 
-const fetchData = () => {
-  if (!storage.value) return
-
+const fetchPosts = () => {
   storage.value
-    .allDocs({ include_docs: true })
-    .then((result) => {
-      postsData.value = result.rows.map((r) => r.doc).filter(Boolean) as Post[]
-    })
-    .catch((err) => console.error(err))
+    ?.allDocs({ include_docs: true })
+    .then((result) => (postsData.value = result.rows.map((r) => r.doc!)))
+}
+
+const fetchCities = () => {
+  citiesDB.value
+    ?.allDocs({ include_docs: true })
+    .then((result) => (citiesData.value = result.rows.map((r) => r.doc!)))
 }
 
 // Watcher
-const startChangesWatcher = () => {
-  if (!storage.value) return
-
-  if (changesHandler) {
-    changesHandler.cancel()
-    changesHandler = null
-  }
-
-  changesHandler = storage.value
-    .changes({
+const startWatchers = () => {
+  // POSTS
+  postsChanges?.cancel()
+  postsChanges = storage.value
+    ?.changes({
       live: true,
       include_docs: true,
       since: 'now',
-      skipSetup: true,
     })
-    .on('change', () => fetchData())
-    .on('error', (err) => console.error('Erreur Changes :', err))
+    .on('change', fetchPosts)
+
+  // CITIES
+  citiesChanges?.cancel()
+  citiesChanges = citiesDB.value
+    ?.changes({
+      live: true,
+      include_docs: true,
+      since: 'now',
+    })
+    .on('change', fetchCities)
 }
 
-// Synchro online
+// Synchro
+
+const remotePosts = 'http://admin:cestcatastrophiiique@localhost:5984/ma_collection'
+const remoteCities = 'http://admin:cestcatastrophiiique@localhost:5984/second'
+
 const startSync = () => {
-  if (!storage.value) return
+  postsSync?.cancel()
+  citiesSync?.cancel()
 
-  const remoteURL = 'http://admin:cestcatastrophiiique@localhost:5984/ma_collection'
-
-  if (syncHandler) {
-    syncHandler.cancel()
-    syncHandler = null
-  }
-
-  syncHandler = storage.value
-    .sync(remoteURL, { live: true, retry: true })
-    .on('change', (info) => {
-      console.log('Synchronisation : changement détecté', info)
-      fetchData()
-    })
-    .on('error', (err) => console.error('Erreur de synchronisation :', err))
+  postsSync = storage.value?.sync(remotePosts, { live: true, retry: true })
+  citiesSync = citiesDB.value?.sync(remoteCities, { live: true, retry: true })
 }
 
-// Synchro offline
 const stopSync = () => {
-  if (syncHandler) {
-    syncHandler.cancel()
-    syncHandler = null
-    console.log('Mode offline : Synchro arrêtée')
-  }
+  postsSync?.cancel()
+  citiesSync?.cancel()
+
+  postsSync = null
+  citiesSync = null
+
+  console.log('Synchronisation OFFLINE')
 }
 
-// Toggle
+// --- TOGGLE ---
 const toggleOffline = () => {
   isOffline.value = !isOffline.value
 
@@ -116,80 +123,85 @@ const toggleOffline = () => {
 }
 
 // CRUD
-const createDoc = (newDoc: Post) => {
-  if (!storage.value) return
-
-  storage.value
-    .post(newDoc)
-    .then(() => fetchData())
-    .catch((err) => console.error(err))
+const createPost = (doc: Post) => storage.value?.post(doc).then(fetchPosts)
+const deletePost = (doc: Post) => storage.value?.remove(doc).then(fetchPosts)
+const updatePost = (doc: Post) => {
+  const updatedPost = { ...doc, ville: 'Lausanne' }
+  storage.value?.put(updatedPost).then(fetchPosts)
 }
 
-const updateDoc = (doc: Post) => {
-  if (!storage.value) return
-
-  const updated = { ...doc, ville: 'Lausanne' }
-
-  storage.value
-    .put(updated)
-    .then(() => fetchData())
-    .catch((err) => console.error(err))
-}
-
-const deleteDoc = (doc: Post) => {
-  if (!storage.value) return
-
-  storage.value
-    .remove(doc)
-    .then(() => fetchData())
-    .catch((err) => console.error(err))
+const createCity = (city: City) => citiesDB.value?.post(city).then(fetchCities)
+const deleteCity = (city: City) => citiesDB.value?.remove(city).then(fetchCities)
+const updateCity = (city: City) => {
+  const updatedCity = { ...city, population: 10000000 }
+  citiesDB.value?.put(updatedCity).then(fetchPosts)
 }
 
 // Recherche avec l'Index
-const searchQuery = ref('')
+const searchPost = ref('')
+const searchCity = ref('')
 
-const searchDocs = async () => {
-  if (!storage.value) return
-  if (!searchQuery.value.trim()) return fetchData() //reset
+const searchPostsDB = async () => {
+  if (!searchPost.value.trim()) return fetchPosts()
+  const res = await storage.value?.find({
+    selector: { nom: { $regex: RegExp(searchPost.value, 'i') } },
+  })
+  postsData.value = res?.docs ?? []
+}
 
-  try {
-    const result = await storage.value.find({
-      selector: {
-        nom: { $regex: RegExp(searchQuery.value, 'i') },
-      },
-    })
-    postsData.value = result.docs
-  } catch (err) {
-    console.error('Erreur de recherche :', err)
-  }
+const searchCitiesDB = async () => {
+  if (!searchCity.value.trim()) return fetchCities()
+  const res = await citiesDB.value?.find({
+    selector: { nom: { $regex: RegExp(searchCity.value, 'i') } },
+  })
+  citiesData.value = res?.docs ?? []
 }
 
 onMounted(() => {
-  console.log('=> Composant initialisé')
-  initDatabase()
-  createIndex()
-  fetchData()
-  startChangesWatcher()
+  initDatabases()
+  createIndexes()
+  fetchPosts()
+  fetchCities()
+  startWatchers()
   startSync()
 })
 </script>
 
 <template>
-  <h1>Anyeonghaseyo ^^</h1>
   <p>Counter: {{ counter }}</p>
   <button @click="increment">+1</button>
-  <p>PostDatas</p>
+  <button @click="toggleOffline">
+    {{ isOffline ? 'Passer online' : 'Passer offline' }}
+  </button>
+  <h2>Collection Posts</h2>
 
-  <input v-model="searchQuery" @input="searchDocs" placeholder="Rechercher par nom" />
-  <br />
-  <button @click="toggleOffline">{{ isOffline ? 'Passer Online' : 'Passer Offline' }}</button>
-  <br />
+  <input v-model="searchPost" @input="searchPostsDB" placeholder="Rechercher un post..." />
+
   <ul>
-    <li v-for="(post, index) in postsData" :key="post._id ?? index">
-      {{ post.nom }} - {{ post.age }} - {{ post.ville }}
-      <button @click="updateDoc(post)">Modifier</button>
-      <button @click="deleteDoc(post)">Supprimer</button>
+    <li v-for="p in postsData" :key="p._id">
+      {{ p.nom }} - {{ p.ville }}
+      <button @click="updatePost(p)">Modifier</button>
+      <button @click="deletePost(p)">Supprimer</button>
     </li>
   </ul>
-  <button @click="createDoc({ nom: 'Marie', age: 22, ville: 'London' })">Créer</button>
+
+  <button @click="createPost({ nom: 'Aissya', age: 20, ville: 'Nairobi' })">Créer Post</button>
+
+  <hr />
+
+  <h2>Collection Cities</h2>
+
+  <input v-model="searchCity" @input="searchCitiesDB" placeholder="Rechercher une ville..." />
+
+  <ul>
+    <li v-for="c in citiesData" :key="c._id">
+      {{ c.nom }} — {{ c.pays }} — {{ c.population }} habitants
+      <button @click="updateCity(c)">Modifier</button>
+      <button @click="deleteCity(c)">Supprimer</button>
+    </li>
+  </ul>
+
+  <button @click="createCity({ nom: 'London', pays: 'UK', population: 9000000 })">
+    Ajouter ville
+  </button>
 </template>
