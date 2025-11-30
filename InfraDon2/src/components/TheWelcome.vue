@@ -5,9 +5,11 @@ import PouchDBFind from 'pouchdb-find'
 
 PouchDB.plugin(PouchDBFind)
 
+// Compteur
 const counter = ref(0)
 const increment = () => counter.value++
 
+// Interfaces
 interface Post {
   nom: string
   age: number
@@ -15,13 +17,6 @@ interface Post {
   _id?: string
   _rev?: string
 }
-
-// Base de données
-const storage = ref<PouchDB.Database<Post> | null>(null)
-const postsData = ref<Post[]>([])
-
-let postsChanges: any = null
-let postsSync: any = null
 
 interface City {
   nom: string
@@ -31,14 +26,21 @@ interface City {
   _rev?: string
 }
 
+// Databases
+const storage = ref<PouchDB.Database<Post> | null>(null)
+const postsData = ref<Post[]>([])
+let postsChanges: any = null
+let postsSync: any = null
+
 const citiesDB = ref<PouchDB.Database<City> | null>(null)
 const citiesData = ref<City[]>([])
-
 let citiesChanges: any = null
 let citiesSync: any = null
 
+// Mode offline
 const isOffline = ref(false)
 
+// Init
 const initDatabases = () => {
   storage.value = new PouchDB<Post>('ma_collection')
   citiesDB.value = new PouchDB<City>('second')
@@ -47,12 +49,13 @@ const initDatabases = () => {
   console.log('Connecté à la 2e DB :', citiesDB.value.name)
 }
 
-// Index
+// Indexs
 const createIndexes = async () => {
   await storage.value?.createIndex({ index: { fields: ['nom'] } })
   await citiesDB.value?.createIndex({ index: { fields: ['nom'] } })
 }
 
+// Fetch
 const fetchPosts = () => {
   storage.value
     ?.allDocs({ include_docs: true })
@@ -65,9 +68,8 @@ const fetchCities = () => {
     .then((result) => (citiesData.value = result.rows.map((r) => r.doc!)))
 }
 
-// Watcher
+// Watchers
 const startWatchers = () => {
-  // POSTS
   postsChanges?.cancel()
   postsChanges = storage.value
     ?.changes({
@@ -77,7 +79,6 @@ const startWatchers = () => {
     })
     .on('change', fetchPosts)
 
-  // CITIES
   citiesChanges?.cancel()
   citiesChanges = citiesDB.value
     ?.changes({
@@ -89,7 +90,6 @@ const startWatchers = () => {
 }
 
 // Synchro
-
 const remotePosts = 'http://admin:cestcatastrophiiique@localhost:5984/ma_collection'
 const remoteCities = 'http://admin:cestcatastrophiiique@localhost:5984/second'
 
@@ -99,6 +99,8 @@ const startSync = () => {
 
   postsSync = storage.value?.sync(remotePosts, { live: true, retry: true })
   citiesSync = citiesDB.value?.sync(remoteCities, { live: true, retry: true })
+
+  console.log('Synchronisation online activée')
 }
 
 const stopSync = () => {
@@ -108,10 +110,10 @@ const stopSync = () => {
   postsSync = null
   citiesSync = null
 
-  console.log('Synchronisation OFFLINE')
+  console.log('Synchronisation offline')
 }
 
-// --- TOGGLE ---
+// Toggle
 const toggleOffline = () => {
   isOffline.value = !isOffline.value
 
@@ -122,7 +124,7 @@ const toggleOffline = () => {
   }
 }
 
-// CRUD
+// CRUD posts
 const createPost = (doc: Post) => storage.value?.post(doc).then(fetchPosts)
 const deletePost = (doc: Post) => storage.value?.remove(doc).then(fetchPosts)
 const updatePost = (doc: Post) => {
@@ -130,14 +132,15 @@ const updatePost = (doc: Post) => {
   storage.value?.put(updatedPost).then(fetchPosts)
 }
 
+// CRUD cities
 const createCity = (city: City) => citiesDB.value?.post(city).then(fetchCities)
 const deleteCity = (city: City) => citiesDB.value?.remove(city).then(fetchCities)
 const updateCity = (city: City) => {
   const updatedCity = { ...city, population: 10000000 }
-  citiesDB.value?.put(updatedCity).then(fetchPosts)
+  citiesDB.value?.put(updatedCity).then(fetchCities)
 }
 
-// Recherche avec l'Index
+// Recherche
 const searchPost = ref('')
 const searchCity = ref('')
 
@@ -157,6 +160,7 @@ const searchCitiesDB = async () => {
   citiesData.value = res?.docs ?? []
 }
 
+// Mount
 onMounted(() => {
   initDatabases()
   createIndexes()
@@ -185,7 +189,7 @@ onMounted(() => {
     </li>
   </ul>
 
-  <button @click="createPost({ nom: 'Aissya', age: 20, ville: 'Nairobi' })">Créer Post</button>
+  <button @click="createPost({ nom: 'Marie', age: 22, ville: 'Tokyo' })">Créer Post</button>
 
   <hr />
 
@@ -201,7 +205,7 @@ onMounted(() => {
     </li>
   </ul>
 
-  <button @click="createCity({ nom: 'London', pays: 'UK', population: 9000000 })">
+  <button @click="createCity({ nom: 'Séoul', pays: 'South Korea', population: 9500000 })">
     Ajouter ville
   </button>
 </template>
