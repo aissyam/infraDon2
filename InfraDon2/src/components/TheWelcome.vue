@@ -5,10 +5,6 @@ import PouchDBFind from 'pouchdb-find'
 
 PouchDB.plugin(PouchDBFind)
 
-// Compteur
-const counter = ref(0)
-const increment = () => counter.value++
-
 // Interfaces
 interface Post {
   nom: string
@@ -18,60 +14,60 @@ interface Post {
   _rev?: string
 }
 
-interface City {
-  nom: string
-  pays: string
-  population: number
+interface CommentDoc {
+  postId: string
+  texte: string
+  auteur: string
   _id?: string
   _rev?: string
 }
 
 // Databases
-const storage = ref<PouchDB.Database<Post> | null>(null)
+const postsDB = ref<PouchDB.Database<Post> | null>(null)
 const postsData = ref<Post[]>([])
 let postsChanges: any = null
 let postsSync: any = null
 
-const citiesDB = ref<PouchDB.Database<City> | null>(null)
-const citiesData = ref<City[]>([])
-let citiesChanges: any = null
-let citiesSync: any = null
+const commentsDB = ref<PouchDB.Database<CommentDoc> | null>(null)
+const commentsData = ref<CommentDoc[]>([])
+let commentsChanges: any = null
+let commentsSync: any = null
 
 // Mode offline
 const isOffline = ref(false)
 
 // Init
 const initDatabases = () => {
-  storage.value = new PouchDB<Post>('ma_collection')
-  citiesDB.value = new PouchDB<City>('second')
+  postsDB.value = new PouchDB<Post>('posts')
+  commentsDB.value = new PouchDB<CommentDoc>('comments')
 
-  console.log('Connecté à la 1ère DB :', storage.value.name)
-  console.log('Connecté à la 2e DB :', citiesDB.value.name)
+  console.log('Connecté DB Posts :', postsDB.value.name)
+  console.log('Connecté DB Comments :', commentsDB.value.name)
 }
 
 // Indexs
 const createIndexes = async () => {
-  await storage.value?.createIndex({ index: { fields: ['nom'] } })
-  await citiesDB.value?.createIndex({ index: { fields: ['nom'] } })
+  await postsDB.value?.createIndex({ index: { fields: ['nom'] } })
+  await commentsDB.value?.createIndex({ index: { fields: ['postId'] } })
 }
 
 // Fetch
 const fetchPosts = () => {
-  storage.value
+  postsDB.value
     ?.allDocs({ include_docs: true })
     .then((result) => (postsData.value = result.rows.map((r) => r.doc!)))
 }
 
-const fetchCities = () => {
-  citiesDB.value
+const fetchComments = () => {
+  commentsDB.value
     ?.allDocs({ include_docs: true })
-    .then((result) => (citiesData.value = result.rows.map((r) => r.doc!)))
+    .then((result) => (commentsData.value = result.rows.map((r) => r.doc!)))
 }
 
 // Watchers
 const startWatchers = () => {
   postsChanges?.cancel()
-  postsChanges = storage.value
+  postsChanges = postsDB.value
     ?.changes({
       live: true,
       include_docs: true,
@@ -79,85 +75,67 @@ const startWatchers = () => {
     })
     .on('change', fetchPosts)
 
-  citiesChanges?.cancel()
-  citiesChanges = citiesDB.value
+  commentsChanges?.cancel()
+  commentsChanges = commentsDB.value
     ?.changes({
       live: true,
       include_docs: true,
       since: 'now',
     })
-    .on('change', fetchCities)
+    .on('change', fetchComments)
 }
 
 // Synchro
-const remotePosts = 'http://admin:cestcatastrophiiique@localhost:5984/ma_collection'
-const remoteCities = 'http://admin:cestcatastrophiiique@localhost:5984/second'
+const remotePosts = 'http://admin:cestcatastrophiiique@localhost:5984/posts'
+const remoteComments = 'http://admin:cestcatastrophiiique@localhost:5984/comments'
 
 const startSync = () => {
   postsSync?.cancel()
-  citiesSync?.cancel()
+  commentsSync?.cancel()
 
-  postsSync = storage.value?.sync(remotePosts, { live: true, retry: true })
-  citiesSync = citiesDB.value?.sync(remoteCities, { live: true, retry: true })
+  postsSync = postsDB.value?.sync(remotePosts, { live: true, retry: true })
+  commentsSync = commentsDB.value?.sync(remoteComments, { live: true, retry: true })
 
-  console.log('Synchronisation online activée')
+  console.log('Synchronisation activée')
 }
 
 const stopSync = () => {
   postsSync?.cancel()
-  citiesSync?.cancel()
+  commentsSync?.cancel()
 
   postsSync = null
-  citiesSync = null
+  commentsSync = null
 
-  console.log('Synchronisation offline')
+  console.log('Synchronisation arrêtée')
 }
 
-// Toggle
 const toggleOffline = () => {
   isOffline.value = !isOffline.value
-
-  if (isOffline.value) {
-    stopSync()
-  } else {
-    startSync()
-  }
+  isOffline.value ? stopSync() : startSync()
 }
 
-// CRUD posts
-const createPost = (doc: Post) => storage.value?.post(doc).then(fetchPosts)
-const deletePost = (doc: Post) => storage.value?.remove(doc).then(fetchPosts)
+// CRUD Posts
+const createPost = (doc: Post) => postsDB.value?.post(doc).then(fetchPosts)
+const deletePost = (doc: Post) => postsDB.value?.remove(doc).then(fetchPosts)
 const updatePost = (doc: Post) => {
   const updatedPost = { ...doc, ville: 'Lausanne' }
-  storage.value?.put(updatedPost).then(fetchPosts)
+  postsDB.value?.put(updatedPost).then(fetchPosts)
 }
 
-// CRUD cities
-const createCity = (city: City) => citiesDB.value?.post(city).then(fetchCities)
-const deleteCity = (city: City) => citiesDB.value?.remove(city).then(fetchCities)
-const updateCity = (city: City) => {
-  const updatedCity = { ...city, population: 10000000 }
-  citiesDB.value?.put(updatedCity).then(fetchCities)
-}
+// CRUD Comments
+const createComment = (comment: CommentDoc) => commentsDB.value?.post(comment).then(fetchComments)
+
+const deleteComment = (comment: CommentDoc) => commentsDB.value?.remove(comment).then(fetchComments)
 
 // Recherche
 const searchPost = ref('')
-const searchCity = ref('')
 
 const searchPostsDB = async () => {
   if (!searchPost.value.trim()) return fetchPosts()
-  const res = await storage.value?.find({
+  const res = await postsDB.value?.find({
     selector: { nom: { $regex: RegExp(searchPost.value, 'i') } },
   })
   postsData.value = res?.docs ?? []
-}
-
-const searchCitiesDB = async () => {
-  if (!searchCity.value.trim()) return fetchCities()
-  const res = await citiesDB.value?.find({
-    selector: { nom: { $regex: RegExp(searchCity.value, 'i') } },
-  })
-  citiesData.value = res?.docs ?? []
 }
 
 // Mount
@@ -165,47 +143,42 @@ onMounted(() => {
   initDatabases()
   createIndexes()
   fetchPosts()
-  fetchCities()
+  fetchComments()
   startWatchers()
   startSync()
 })
 </script>
 
 <template>
-  <p>Counter: {{ counter }}</p>
-  <button @click="increment">+1</button>
   <button @click="toggleOffline">
     {{ isOffline ? 'Passer online' : 'Passer offline' }}
   </button>
-  <h2>Collection Posts</h2>
+
+  <h2>Posts</h2>
 
   <input v-model="searchPost" @input="searchPostsDB" placeholder="Rechercher un post..." />
 
   <ul>
     <li v-for="p in postsData" :key="p._id">
-      {{ p.nom }} - {{ p.ville }}
+      {{ p.nom }} – {{ p.ville }}
       <button @click="updatePost(p)">Modifier</button>
       <button @click="deletePost(p)">Supprimer</button>
+
+      <h4>Commentaires :</h4>
+      <ul>
+        <li v-for="c in commentsData.filter((cm) => cm.postId === p._id)" :key="c._id">
+          {{ c.texte }} — {{ c.auteur }}
+          <button @click="deleteComment(c)">Supprimer</button>
+        </li>
+      </ul>
+
+      <button
+        @click="createComment({ postId: p._id!, texte: 'Nouveau comment', auteur: 'Mowgli-san' })"
+      >
+        Ajouter commentaire
+      </button>
     </li>
   </ul>
 
   <button @click="createPost({ nom: 'Marie', age: 22, ville: 'Tokyo' })">Créer Post</button>
-
-  <hr />
-
-  <h2>Collection Cities</h2>
-
-  <input v-model="searchCity" @input="searchCitiesDB" placeholder="Rechercher une ville..." />
-
-  <ul>
-    <li v-for="c in citiesData" :key="c._id">
-      {{ c.nom }} — {{ c.pays }} — {{ c.population }} habitants
-      <button @click="updateCity(c)">Modifier</button>
-      <button @click="deleteCity(c)">Supprimer</button>
-    </li>
-  </ul>
-
-  <button @click="createCity({ nom: 'Séoul', pays: 'South Korea', population: 9500000 })">
-    Ajouter ville
-  </button>
 </template>
