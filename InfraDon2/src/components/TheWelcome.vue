@@ -243,7 +243,6 @@ onMounted(() => {
   <h1>Tp InfraDon - Posts et Comms</h1>
   <p>Compteur: {{ counter }} <button @click="increment">+1</button></p>
   <hr />
-<<<<<<< HEAD
 
   <h2>Collection Cities</h2>
 
@@ -259,51 +258,5 @@ onMounted(() => {
 
   <button @click="createCity({ nom: 'Séoul', pays: 'South Korea', population: 9500000 })">
     Ajouter ville
-=======
-  <div>
-    <h2>Connexion</h2>
-    <p>
-      Etat: <strong>{{ isOffline ? 'HORS LIGNE' : 'EN LIGNE' }}</strong>
-    </p>
-    <button @click="toggleOfflineMode">Changer <=> Online Offline</button>
-    <button @click="MAJserveur">Sync Manuelle</button>
-  </div>
-  <hr />
-  <div>
-    <h2>Outils</h2>
-    <button @click="createFactoryDocs">Factory (Avec implémentation 2 collections)</button>
-    <button @click="sortByLikes">Trier par Likes (DB)</button>
-    <br />
-    <input v-model="searchTerm" placeholder="Nom..." />
-    <button @click="searchByName">Rechercher</button>
-    <button @click="fetchData">Reset Liste</button>
-  </div>
-  <hr />
-  <div>
-    <h2>Liste des Posts</h2>
-    <ul>
-      <li v-for="post in postsData" :key="post._id">
-        <h3>{{ post.nom }} ({{ post.likes }} likes)</h3>
-        <p>{{ post.ville }} - {{ post.sport }}</p>
-        <button @click="toggleLike(post)">Liker</button>
-        <button @click="updateDoc(post)">Modifier Post</button>
-        <button @click="deleteDoc(post)">Supprimer Post</button>
-        <button @click="addComment(post)">Ajouter Commentaire</button>
-        <div v-if="post.displayComments && post.displayComments.length > 0">
-          <h4>Commentaires:</h4>
-          <ul>
-            <li v-for="comment in post.displayComments" :key="comment._id">
-              {{ comment.text }}
-              <button @click="deleteComment(comment)">Suppr</button>
-            </li>
-          </ul>
-        </div>
-        <hr />
-      </li>
-    </ul>
-  </div>
-  <button @click="createDoc({ nom: 'Aissya', age: 20, ville: 'Séoul', sport: 'taichi' })">
-    Créer Document
->>>>>>> da91252 (Résolution du problème merge)
   </button>
 </template>
