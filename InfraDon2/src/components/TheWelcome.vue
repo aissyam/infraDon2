@@ -192,6 +192,18 @@ const createFactoryDocs = async () => {
   const cities = ['Paris', 'Tokyo', 'Londres', 'Séoul', 'Nairobi']
   const posts: Post[] = []
   const comments: CommentDoc[] = []
+  const sampleComments = [
+    'Il est temps de lock in',
+    'Bon, il était sec ou pas ce gâteau?',
+    'Je vais te faire une offre que tu ne pourras pas refuser',
+    'Moi tu mparle pas d âge ',
+    'Eh, tu te calmes',
+    'Je te dis la vérité ma chérie, il est pas bien ton mari',
+    'Attention les chaises!!!',
+    'Moi?? Mais qui elle est celle-là?',
+    'You can be do want we want to do',
+    'Parceque aujourdhui les fruits et légumes sont hypertensés',
+  ]
 
   for (let i = 0; i < 10; i++) {
     const id = `post_${Date.now()}_${i}`
@@ -205,7 +217,7 @@ const createFactoryDocs = async () => {
     })
     comments.push({
       postId: id,
-      text: `Commentaire ${i + 1}`,
+      text: sampleComments[Math.floor(Math.random() * sampleComments.length)],
       date: new Date().toISOString(),
     })
   }
