@@ -177,6 +177,10 @@ const searchByName = async () => {
   }
 }
 
+const sortByLikes = () => {
+  postsData.value.sort((a, b) => (b.likes || 0) - (a.likes || 0))
+}
+
 // Factory
 const createFactoryDocs = async () => {
   if (!postsDB.value || !commentsDB.value) return
