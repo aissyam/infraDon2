@@ -187,7 +187,9 @@ const searchByName = async () => {
 const createFactoryDocs = async () => {
   if (!postsDB.value || !commentsDB.value) return
 
-  const sports = ['Taichi', 'Taekwondo', 'Skeleton']
+  const sports = ['Taichi', 'Taekwondo', 'Skeleton', 'Basket', 'Tir au fusil']
+  const names = ['Barat', 'Aisha', 'Jongwon']
+  const cities = ['Paris', 'Tokyo', 'Londres', 'Séoul', 'Nairobi']
   const posts: Post[] = []
   const comments: CommentDoc[] = []
 
@@ -195,10 +197,10 @@ const createFactoryDocs = async () => {
     const id = `post_${Date.now()}_${i}`
     posts.push({
       _id: id,
-      nom: `User ${i + 1}`,
+      nom: names[i % names.length],
       age: 20 + i,
-      ville: `Ville ${i}`,
-      sport: sports[i % 3],
+      ville: cities[i % cities.length],
+      sport: sports[i % sports.length],
       likes: Math.floor(Math.random() * 50),
     })
     comments.push({
