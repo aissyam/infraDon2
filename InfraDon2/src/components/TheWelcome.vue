@@ -145,6 +145,12 @@ const deleteComment = (comment: CommentDoc) => {
   commentsDB.value?.remove(comment._id!, comment._rev!).then(fetchData)
 }
 
+const updateComment = (comment: CommentDoc) => {
+  const newText = prompt('Modifier commentaire :', comment.text)
+  if (!newText || !commentsDB.value) return
+  commentsDB.value.put({ ...comment, text: newText }).then(fetchData)
+}
+
 // Recherche & Index
 const createIndex = () => {
   postsDB.value?.createIndex({ index: { fields: ['likes'] } })
@@ -261,7 +267,8 @@ onMounted(() => {
           <ul>
             <li v-for="comment in post.displayComments" :key="comment._id">
               {{ comment.text }} — {{ comment.date }}
-              <button @click="deleteComment(comment)">Supprimer</button>
+              <button @click="deleteComment(comment)">Supprimer le commentaire</button>
+              <button @click="updateComment(comment)">Modifier le commentaire</button>
             </li>
           </ul>
         </div>
