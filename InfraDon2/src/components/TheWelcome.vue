@@ -11,11 +11,11 @@ const increment = () => counter.value++
 
 // Interfaces
 declare interface CommentDoc {
+  _id?: string
+  _rev?: string
   postId: string
   text: string
   date: string
-  _id?: string
-  _rev?: string
 }
 
 declare interface Post {
@@ -29,46 +29,46 @@ declare interface Post {
   displayComments?: CommentDoc[]
 }
 
-const postsDB = ref<PouchDB.Database | undefined>()
-const commentsDB = ref<PouchDB.Database | undefined>()
+// Databases & State
+const postsDB = ref<PouchDB.Database<Post> | null>(null)
+const commentsDB = ref<PouchDB.Database<CommentDoc> | null>(null)
 const postsData = ref<Post[]>([])
-
+const isOffline = ref(false)
 const searchTerm = ref('')
+
 let postSyncHandler: PouchDB.Replication.Sync<any> | null = null
 let commentSyncHandler: PouchDB.Replication.Sync<any> | null = null
+
+// CouchDB URLs
 const COUCH_URL_POSTS = 'http://admin:cestcatastrophiiique@localhost:5984/ma_collection'
 const COUCH_URL_COMMENTS = 'http://admin:cestcatastrophiiique@localhost:5984/second'
-//du cpoup la cest la nouvelle collections
 
-// Mode offline
-const isOffline = ref(false)
-
-// Init
+// Init & Sync
 const initDatabases = () => {
-  console.log('=> Init des 2 Collections')
-  postsDB.value = new PouchDB('Posts')
-  commentsDB.value = new PouchDB('Comments')
-  if (!isOffline.value) {
-    startLiveReplication()
-  }
+  console.log('=> Initialisation des 2 collections')
+  postsDB.value = new PouchDB<Post>('Posts')
+  commentsDB.value = new PouchDB<CommentDoc>('Comments')
+  if (!isOffline.value) startLiveReplication()
 }
 
 const startLiveReplication = () => {
-  if (postSyncHandler || !postsDB.value || !commentsDB.value) return
+  if (!postsDB.value || !commentsDB.value || postSyncHandler) return
+
   postSyncHandler = postsDB.value
     .sync(COUCH_URL_POSTS, { live: true, retry: true })
-    .on('change', () => fetchData())
+    .on('change', fetchData)
+
   commentSyncHandler = commentsDB.value
     .sync(COUCH_URL_COMMENTS, { live: true, retry: true })
-    .on('change', () => fetchData())
+    .on('change', fetchData)
 }
 
 const toggleOfflineMode = () => {
   isOffline.value = !isOffline.value
   if (isOffline.value) {
     postSyncHandler?.cancel()
-    postSyncHandler = null
     commentSyncHandler?.cancel()
+    postSyncHandler = null
     commentSyncHandler = null
     console.log('Mode Offline')
   } else {
@@ -81,15 +81,11 @@ const MAJserveur = async () => {
   try {
     await postsDB.value?.replicate.to(COUCH_URL_POSTS)
     await postsDB.value?.replicate.from(COUCH_URL_POSTS)
-    await commentsDB.value?.replicate
-      .to(COUCH_URL_COMMENTS)
-      .catch((e) => console.log('Pas de DB remote comments'))
-    await commentsDB.value?.replicate
-      .from(COUCH_URL_COMMENTS)
-      .catch((e) => console.log('Pas de DB remote comments'))
+    await commentsDB.value?.replicate.to(COUCH_URL_COMMENTS)
+    await commentsDB.value?.replicate.from(COUCH_URL_COMMENTS)
     fetchData()
-  } catch (err) {
-    console.error('Erreur sync manuelle:', err)
+  } catch (e) {
+    console.error('Erreur sync manuelle', e)
   }
 }
 
@@ -97,166 +93,185 @@ const MAJserveur = async () => {
 const fetchData = async () => {
   if (!postsDB.value || !commentsDB.value) return
   try {
-    const allPosts = await postsDB.value.allDocs({ include_docs: true })
-    const posts = allPosts.rows.map((row: any) => row.doc)
-    const allComments = await commentsDB.value.allDocs({ include_docs: true })
-    const comments = allComments.rows.map((row: any) => row.doc)
-    postsData.value = posts.map((post: Post) => {
-      const linkedComments = comments.filter((c: CommentDoc) => c.postId === post._id)
-      return { ...post, displayComments: linkedComments }
-    })
-    console.log('Données chargées et jointes.')
+    const postsRes = await postsDB.value.allDocs({ include_docs: true })
+    const commentsRes = await commentsDB.value.allDocs({ include_docs: true })
+
+    const posts = postsRes.rows.map((r) => r.doc!).filter(Boolean)
+    const comments = commentsRes.rows.map((r) => r.doc!).filter(Boolean)
+
+    postsData.value = posts.map((post) => ({
+      ...post,
+      displayComments: comments.filter((c) => c.postId === post._id),
+    }))
   } catch (err) {
     console.error('Erreur fetchData:', err)
   }
 }
 
-// CRUD
-const createDoc = (newDoc: any) => {
-  newDoc.likes = 0
-  postsDB.value?.post(newDoc).then(() => fetchData())
+// CRUD Posts
+const createDoc = (doc: Partial<Post>) => {
+  const newDoc = { ...doc, likes: 0 }
+  postsDB.value?.post(newDoc).then(fetchData)
 }
 
 const deleteDoc = (doc: Post) => {
-  // Suppression du post
-  postsDB.value?.remove(doc._id!, doc._rev!).then(() => fetchData())
+  postsDB.value?.remove(doc._id!, doc._rev!).then(fetchData)
 }
 
 const updateDoc = (doc: Post) => {
-  const { displayComments, ...docToSave } = doc
-  const docUpdated = { ...docToSave, ville: 'Update ' + new Date().toISOString() }
-  postsDB.value?.put(docUpdated).then(() => fetchData())
+  const { displayComments, ...clean } = doc
+  postsDB.value?.put({ ...clean, ville: 'Update ' + new Date().toISOString() }).then(fetchData)
 }
 
 const toggleLike = (post: Post) => {
-  const { displayComments, ...docToSave } = post
-  const updated = { ...docToSave, likes: (docToSave.likes || 0) + 1 }
-  postsDB.value?.put(updated).then(() => fetchData())
+  const { displayComments, ...clean } = post
+  postsDB.value?.put({ ...clean, likes: (clean.likes || 0) + 1 }).then(fetchData)
 }
 
+// Comments
 const addComment = (post: Post) => {
   const txt = prompt('Commentaire :')
   if (!txt || !commentsDB.value) return
+
   const newComment: CommentDoc = {
     postId: post._id!,
     text: txt,
     date: new Date().toISOString(),
   }
-  commentsDB.value
-    .post(newComment)
-    .then(() => {
-      console.log('Commentaire ajouté dans la collection Comments')
-      fetchData()
-    })
-    .catch((err) => console.error(err))
-}
-const deleteComment = (comment: CommentDoc) => {
-  if (!commentsDB.value || !comment._id || !comment._rev) return
-  commentsDB.value.remove(comment._id, comment._rev).then(() => fetchData())
+  commentsDB.value.post(newComment).then(fetchData)
 }
 
-// Index
+const deleteComment = (comment: CommentDoc) => {
+  commentsDB.value?.remove(comment._id!, comment._rev!).then(fetchData)
+}
+
+// Recherche & Index
 const createIndex = () => {
   postsDB.value?.createIndex({ index: { fields: ['likes'] } })
   postsDB.value?.createIndex({ index: { fields: ['nom'] } })
 }
 
-const sortByLikes = () => {
-  postsDB.value
-    ?.find({
-      selector: { likes: { $gte: 0 } },
-      sort: [{ likes: 'desc' }],
-    })
-    .then((res: any) => {
-      const sortedPosts = res.docs
-      //pour recuperer pour lier le commentaires ua posts
-      commentsDB.value?.allDocs({ include_docs: true }).then((comRes: any) => {
-        const allComments = comRes.rows.map((r: any) => r.doc)
-        postsData.value = sortedPosts.map((post: Post) => {
-          const linked = allComments.filter((c: CommentDoc) => c.postId === post._id)
-          return { ...post, displayComments: linked }
-        })
-      })
-    })
-}
+const searchByName = async () => {
+  if (!searchTerm.value) return fetchData()
+  if (!postsDB.value || !commentsDB.value) return
 
-const searchByName = () => {
-  if (!searchTerm.value) {
-    fetchData()
-    return
+  try {
+    const res = await postsDB.value.find({
+      selector: { nom: { $regex: new RegExp(searchTerm.value, 'i') } },
+    })
+    const commentsRes = await commentsDB.value.allDocs({ include_docs: true })
+    const comments = commentsRes.rows.map((r) => r.doc!).filter(Boolean)
+
+    postsData.value = res.docs.map((post) => ({
+      ...post,
+      displayComments: comments.filter((c) => c.postId === post._id),
+    }))
+  } catch (err) {
+    console.error('Erreur searchByName:', err)
   }
-  const regex = new RegExp(`^${searchTerm.value}`, 'i')
-  postsDB.value
-    ?.find({
-      selector: { nom: { $regex: regex } },
-    })
-    .then((res: any) => {
-      const foundPosts = res.docs
-      commentsDB.value?.allDocs({ include_docs: true }).then((comRes: any) => {
-        const allComments = comRes.rows.map((r: any) => r.doc)
-        postsData.value = foundPosts.map((post: Post) => {
-          const linked = allComments.filter((c: CommentDoc) => c.postId === post._id)
-          return { ...post, displayComments: linked }
-        })
-      })
-    })
 }
 
+// Factory
 const createFactoryDocs = async () => {
   if (!postsDB.value || !commentsDB.value) return
-  const postsToAdd: any[] = []
-  const commentsToAdd: any[] = []
+
   const sports = ['Football', 'Tennis', 'Rugby']
+  const posts: Post[] = []
+  const comments: CommentDoc[] = []
+
   for (let i = 0; i < 10; i++) {
-    const postId = 'post_factory_' + Date.now() + '_' + i
-    const docPost = {
-      _id: postId,
+    const id = `post_${Date.now()}_${i}`
+    posts.push({
+      _id: id,
       nom: `User ${i + 1}`,
       age: 20 + i,
       ville: `Ville ${i}`,
       sport: sports[i % 3],
       likes: Math.floor(Math.random() * 50),
-    }
-    postsToAdd.push(docPost)
-
-    const docCom = {
-      postId: postId,
-      text: `Super commentaire pour le post ${i}`,
+    })
+    comments.push({
+      postId: id,
+      text: `Commentaire ${i + 1}`,
       date: new Date().toISOString(),
-    }
-    commentsToAdd.push(docCom)
+    })
   }
-  //mettre du coup dans les 2 collections nromalement
-  await postsDB.value.bulkDocs(postsToAdd)
-  await commentsDB.value.bulkDocs(commentsToAdd)
-  console.log('Factory : Posts et Commentaires créés dans 2 collections.')
+
+  await postsDB.value.bulkDocs(posts)
+  await commentsDB.value.bulkDocs(comments)
   fetchData()
 }
 
+// Mounted
 onMounted(() => {
   initDatabases()
   createIndex()
   fetchData()
 })
 </script>
+
 <template>
-  <h1>Tp InfraDon - Posts et Comms</h1>
-  <p>Compteur: {{ counter }} <button @click="increment">+1</button></p>
+  <h1>Tp InfraDon - Posts et Commentaires</h1>
+
+  <!-- Compteur -->
+  <p>
+    Compteur: {{ counter }}
+    <button @click="increment">+1</button>
+  </p>
   <hr />
 
-  <h2>Collection Cities</h2>
+  <!-- Connexion / Offline -->
+  <div>
+    <h2>Connexion</h2>
+    <p>
+      Etat: <strong>{{ isOffline ? 'HORS LIGNE' : 'EN LIGNE' }}</strong>
+    </p>
+    <button @click="toggleOfflineMode">Changer <=> Online/Offline</button>
+    <button @click="MAJserveur">Sync Manuelle</button>
+  </div>
+  <hr />
 
-  <input v-model="searchCity" @input="searchCitiesDB" placeholder="Rechercher une ville..." />
+  <!-- Outils -->
+  <div>
+    <h2>Outils</h2>
+    <button @click="createFactoryDocs">Factory (2 collections)</button>
+    <button @click="sortByLikes">Trier par Likes</button>
+    <br />
+    <input v-model="searchTerm" placeholder="Rechercher un nom..." />
+    <button @click="searchByName">Rechercher</button>
+    <button @click="fetchData">Reset la liste</button>
+  </div>
+  <hr />
 
-  <ul>
-    <li v-for="c in citiesData" :key="c._id">
-      {{ c.nom }} — {{ c.pays }} — {{ c.population }} habitants
-      <button @click="updateCity(c)">Modifier</button>
-      <button @click="deleteCity(c)">Supprimer</button>
-    </li>
-  </ul>
+  <!-- Liste des Posts -->
+  <div>
+    <h2>Liste des Posts</h2>
+    <ul>
+      <li v-for="post in postsData" :key="post._id">
+        <h3>{{ post.nom }} ({{ post.likes }} likes)</h3>
+        <p>{{ post.ville }} - {{ post.sport }}</p>
 
-  <button @click="createCity({ nom: 'Séoul', pays: 'South Korea', population: 9500000 })">
-    Ajouter ville
+        <button @click="toggleLike(post)">Liker</button>
+        <button @click="updateDoc(post)">Modifier le post</button>
+        <button @click="deleteDoc(post)">Supprimer le post</button>
+        <button @click="addComment(post)">Ajouter un commentaire</button>
+
+        <!-- Liste des commentaires du post -->
+        <div v-if="post.displayComments?.length">
+          <h4>Commentaires :</h4>
+          <ul>
+            <li v-for="comment in post.displayComments" :key="comment._id">
+              {{ comment.text }} — {{ comment.date }}
+              <button @click="deleteComment(comment)">Supprimer</button>
+            </li>
+          </ul>
+        </div>
+        <hr />
+      </li>
+    </ul>
+  </div>
+
+  <!-- Créer un post rapide -->
+  <button @click="createDoc({ nom: 'Aissya', age: 20, ville: 'London', sport: 'Taichi' })">
+    Créer Document
   </button>
 </template>
