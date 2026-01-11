@@ -94,15 +94,19 @@ const fetchData = async () => {
   if (!postsDB.value || !commentsDB.value) return
   try {
     const postsRes = await postsDB.value.allDocs({ include_docs: true })
-    const commentsRes = await commentsDB.value.allDocs({ include_docs: true })
+    let posts = postsRes.rows.map((r) => r.doc!).filter(Boolean)
 
-    const posts = postsRes.rows.map((r) => r.doc!).filter(Boolean)
+    posts = posts.filter((p) => p.nom && p.ville)
+
+    const commentsRes = await commentsDB.value.allDocs({ include_docs: true })
     const comments = commentsRes.rows.map((r) => r.doc!).filter(Boolean)
 
-    postsData.value = posts.map((post) => ({
-      ...post,
-      displayComments: comments.filter((c) => c.postId === post._id),
-    }))
+    postsData.value = posts
+      .map((post) => ({
+        ...post,
+        displayComments: comments.filter((c) => c.postId === post._id),
+      }))
+      .sort((a, b) => (b.likes || 0) - (a.likes || 0))
   } catch (err) {
     console.error('Erreur fetchData:', err)
   }
@@ -115,7 +119,8 @@ const createDoc = (doc: Partial<Post>) => {
 }
 
 const deleteDoc = (doc: Post) => {
-  postsDB.value?.remove(doc._id!, doc._rev!).then(fetchData)
+  if (!doc._id || !doc._rev) return
+  postsDB.value?.remove(doc._id, doc._rev).then(fetchData)
 }
 
 const updateDoc = (doc: Post) => {
@@ -131,10 +136,10 @@ const toggleLike = (post: Post) => {
 // Comments
 const addComment = (post: Post) => {
   const txt = prompt('Commentaire :')
-  if (!txt || !commentsDB.value) return
+  if (!txt || !commentsDB.value || !post._id) return
 
   const newComment: CommentDoc = {
-    postId: post._id!,
+    postId: post._id,
     text: txt,
     date: new Date().toISOString(),
   }
@@ -142,12 +147,13 @@ const addComment = (post: Post) => {
 }
 
 const deleteComment = (comment: CommentDoc) => {
-  commentsDB.value?.remove(comment._id!, comment._rev!).then(fetchData)
+  if (!comment._id || !comment._rev) return
+  commentsDB.value?.remove(comment._id, comment._rev).then(fetchData)
 }
 
 const updateComment = (comment: CommentDoc) => {
   const newText = prompt('Modifier commentaire :', comment.text)
-  if (!newText || !commentsDB.value) return
+  if (!newText || !commentsDB.value || !comment._id || !comment._rev) return
   commentsDB.value.put({ ...comment, text: newText }).then(fetchData)
 }
 
@@ -177,15 +183,11 @@ const searchByName = async () => {
   }
 }
 
-const sortByLikes = () => {
-  postsData.value.sort((a, b) => (b.likes || 0) - (a.likes || 0))
-}
-
 // Factory
 const createFactoryDocs = async () => {
   if (!postsDB.value || !commentsDB.value) return
 
-  const sports = ['Football', 'Tennis', 'Rugby']
+  const sports = ['Taichi', 'Taekwondo', 'Skeleton']
   const posts: Post[] = []
   const comments: CommentDoc[] = []
 
@@ -271,8 +273,8 @@ onMounted(() => {
           <ul>
             <li v-for="comment in post.displayComments" :key="comment._id">
               {{ comment.text }} — {{ comment.date }}
-              <button @click="deleteComment(comment)">Supprimer le commentaire</button>
-              <button @click="updateComment(comment)">Modifier le commentaire</button>
+              <button @click="updateComment(comment)">Modifier</button>
+              <button @click="deleteComment(comment)">Supprimer</button>
             </li>
           </ul>
         </div>
